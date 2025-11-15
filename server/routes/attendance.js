@@ -761,16 +761,20 @@ router.get('/live', adminAuth, async (req, res) => {
     const absentToday = totalEmployees - presentToday;
     const lateToday = attendance.filter(a => a.isLate).length;
     const onTimeToday = presentToday - lateToday;
+    const earlyDepartures = attendance.filter(a => a.endDayTime && a.hoursWorked < 8).length;
 
     const totalHoursToday = attendance.reduce((sum, a) => sum + (a.hoursWorked || 0), 0);
     const avgHoursToday = presentToday > 0 ? totalHoursToday / presentToday : 0;
+    const avgAttendance = totalEmployees > 0 ? Math.round((presentToday / totalEmployees) * 100) : 0;
 
     const stats = {
       totalEmployees,
       presentToday,
       absentToday,
-      lateToday,
+      lateArrivals: lateToday,
+      earlyDepartures,
       onTimeToday,
+      avgAttendance,
       presentPercentage: totalEmployees > 0 ? (presentToday / totalEmployees) * 100 : 0,
       absentPercentage: totalEmployees > 0 ? (absentToday / totalEmployees) * 100 : 0,
       onTimePercentage: presentToday > 0 ? (onTimeToday / presentToday) * 100 : 0,
@@ -778,24 +782,42 @@ router.get('/live', adminAuth, async (req, res) => {
       totalHoursToday
     };
 
-    // Format attendance data
+    // Format attendance data with proper location and status
     const formattedAttendance = attendance.map(record => ({
-      ...record,
+      _id: record._id,
+      user: {
+        _id: record.user._id,
+        name: record.user.name,
+        email: record.user.email,
+        avatar: record.user.avatar,
+        department: record.user.department,
+        tag: record.user.tag || 'Employee'
+      },
+      date: record.date,
+      startDayTime: record.startDayTime,
+      endDayTime: record.endDayTime,
+      hoursWorked: record.hoursWorked || 0,
+      isPresent: record.isPresent,
+      isLate: record.isLate,
+      isLeave: record.isLeave,
       status: record.isPresent ? (record.isLate ? 'late' : 'present') :
               record.isLeave ? 'on-leave' : 'absent',
-      user: {
-        ...record.user,
-        tag: record.user.tag || 'Employee' // Default tag
-      }
+      location: record.location ? {
+        latitude: record.location.latitude,
+        longitude: record.location.longitude,
+        address: record.location.address,
+        accuracy: record.location.accuracy
+      } : null,
+      workLocationType: record.workLocationType || 'Office',
+      source: record.source || 'Manual',
+      deviceInfo: record.deviceInfo,
+      notes: record.notes
     }));
 
     res.json({
       success: true,
-      data: {
-        attendance: formattedAttendance,
-        stats,
-        date: targetDate.toISOString().split('T')[0]
-      }
+      attendance: formattedAttendance,
+      stats
     });
 
   } catch (error) {

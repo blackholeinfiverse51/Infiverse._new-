@@ -23,7 +23,8 @@ import {
   Filter,
   Search,
   Eye,
-  MoreVertical
+  MoreVertical,
+  Map
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -37,6 +38,7 @@ import { useAuth } from '../../context/auth-context';
 import { useSocketContext } from '../../context/socket-context';
 import api from '../../lib/api';
 import { useToast } from '../../hooks/use-toast';
+import LiveAttendanceMap from './LiveAttendanceMap';
 
 const LiveAttendanceDashboard = () => {
   const { user } = useAuth();
@@ -350,10 +352,14 @@ const LiveAttendanceDashboard = () => {
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 bg-white/80 backdrop-blur-sm">
+        <TabsList className="grid w-full grid-cols-4 bg-white/80 backdrop-blur-sm">
           <TabsTrigger value="overview" className="flex items-center gap-2">
             <Activity className="w-4 h-4" />
             Live Overview
+          </TabsTrigger>
+          <TabsTrigger value="map" className="flex items-center gap-2">
+            <Map className="w-4 h-4" />
+            Location Map
           </TabsTrigger>
           <TabsTrigger value="grid" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
@@ -446,6 +452,11 @@ const LiveAttendanceDashboard = () => {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* Location Map Tab */}
+        <TabsContent value="map" className="space-y-6">
+          <LiveAttendanceMap attendance={filteredAttendance} />
         </TabsContent>
 
         {/* Employee Grid Tab */}

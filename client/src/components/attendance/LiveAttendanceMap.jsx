@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { GoogleMap, LoadScript, Marker, InfoWindow, Circle } from '@react-google-maps/api';
 import { motion } from 'framer-motion';
 import { 
   MapPin, 
@@ -12,28 +13,93 @@ import {
   Monitor,
   AlertTriangle,
   CheckCircle,
-  XCircle
+  XCircle,
+  Home,
+  Navigation2
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDPVqF1eIKiHDxzP4D3OciR1VvyLL7Xv0Y';
+
+const mapContainerStyle = {
+  width: '100%',
+  height: '600px',
+  borderRadius: '12px'
+};
+
+const mapOptions = {
+  disableDefaultUI: false,
+  zoomControl: true,
+  streetViewControl: true,
+  mapTypeControl: true,
+  fullscreenControl: true,
+  styles: [
+    {
+      featureType: "poi",
+      elementType: "labels",
+      stylers: [{ visibility: "off" }]
+    }
+  ]
+};
+
 const LiveAttendanceMap = ({ attendance }) => {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [mapCenter, setMapCenter] = useState({ lat: 19.1663, lng: 72.8526 }); // Mumbai office
+  const [map, setMap] = useState(null);
+  const [infoWindowOpen, setInfoWindowOpen] = useState(null);
 
-  // Office location
+  // Office location - Blackhole Infiverse
   const officeLocation = {
-    lat: 19.1663,
-    lng: 72.8526,
+    lat: 19.160122,
+    lng: 72.839720,
     address: "Blackhole Infiverse, Kali Gali, 176/1410, Rd Number 3, near Hathi Circle, above Bright Connection, Motilal Nagar II, Goregaon West, Mumbai, Maharashtra 400104"
   };
+
+  const [mapCenter, setMapCenter] = useState(officeLocation);
 
   // Filter employees with location data
   const employeesWithLocation = attendance?.filter(emp => 
     emp.location && emp.location.latitude && emp.location.longitude
   ) || [];
+
+  // Load map callback
+  const onLoad = useCallback((map) => {
+    setMap(map);
+  }, []);
+
+  const onUnmount = useCallback(() => {
+    setMap(null);
+  }, []);
+
+  // Fit bounds to show all markers
+  useEffect(() => {
+    if (map && employeesWithLocation.length > 0) {
+      const bounds = new window.google.maps.LatLngBounds();
+      
+      // Add office location
+      bounds.extend(new window.google.maps.LatLng(officeLocation.lat, officeLocation.lng));
+      
+      // Add all employee locations
+      employeesWithLocation.forEach(emp => {
+        if (emp.location?.latitude && emp.location?.longitude) {
+          bounds.extend(new window.google.maps.LatLng(
+            emp.location.latitude,
+            emp.location.longitude
+          ));
+        }
+      });
+      
+      map.fitBounds(bounds);
+      
+      // Set a minimum zoom level
+      const listener = window.google.maps.event.addListener(map, 'idle', () => {
+        if (map.getZoom() > 16) map.setZoom(16);
+        window.google.maps.event.removeListener(listener);
+      });
+    }
+  }, [map, employeesWithLocation]);
 
   // Calculate distance from office
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -52,16 +118,50 @@ const LiveAttendanceMap = ({ attendance }) => {
   const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
       case 'present':
-        return 'bg-green-500';
+        return 'text-green-500';
       case 'absent':
-        return 'bg-red-500';
+        return 'text-red-500';
       case 'late':
-        return 'bg-yellow-500';
+        return 'text-yellow-500';
       case 'on-leave':
-        return 'bg-blue-500';
+        return 'text-blue-500';
       default:
-        return 'bg-gray-500';
+        return 'text-gray-500';
     }
+  };
+
+  const getMarkerColor = (status, distance) => {
+    if (distance <= 500) return '#10b981'; // Green - inside office
+    
+    switch (status?.toLowerCase()) {
+      case 'present':
+        return '#3b82f6'; // Blue
+      case 'late':
+        return '#f59e0b'; // Amber
+      default:
+        return '#6b7280'; // Gray
+    }
+  };
+
+  const getMarkerIcon = (status, distance, workLocationType) => {
+    const color = getMarkerColor(status, distance);
+    const size = 40;
+    
+    let icon = '👤';
+    if (workLocationType === 'Home') {
+      icon = '🏠';
+    } else if (distance <= 500) {
+      icon = '🏢';
+    }
+    
+    return {
+      path: window.google.maps.SymbolPath.CIRCLE,
+      fillColor: color,
+      fillOpacity: 0.9,
+      strokeColor: '#ffffff',
+      strokeWeight: 3,
+      scale: 12,
+    };
   };
 
   const getStatusIcon = (status) => {
@@ -117,85 +217,212 @@ const LiveAttendanceMap = ({ attendance }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Map Area */}
         <div className="lg:col-span-2">
-          <Card className="h-96">
-            <CardContent className="p-0 h-full">
-              <div className="relative h-full bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg overflow-hidden">
-                {/* Office Marker */}
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                  <motion.div
-                    animate={{ scale: [1, 1.2, 1] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="relative"
-                  >
-                    <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center shadow-lg">
-                      <Building className="w-4 h-4 text-white" />
-                    </div>
-                    <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-white px-2 py-1 rounded shadow text-xs font-medium whitespace-nowrap">
-                      Office
-                    </div>
-                  </motion.div>
-                </div>
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY}>
+                <GoogleMap
+                  mapContainerStyle={mapContainerStyle}
+                  center={mapCenter}
+                  zoom={14}
+                  options={mapOptions}
+                  onLoad={onLoad}
+                  onUnmount={onUnmount}
+                >
+                  {/* Office Location Marker */}
+                  <Marker
+                    position={{ lat: officeLocation.lat, lng: officeLocation.lng }}
+                    icon={{
+                      path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+                      fillColor: '#ef4444',
+                      fillOpacity: 1,
+                      strokeColor: '#ffffff',
+                      strokeWeight: 2,
+                      scale: 8,
+                      rotation: 180
+                    }}
+                    title="Office Location"
+                    onClick={() => {
+                      setSelectedEmployee(null);
+                      setInfoWindowOpen('office');
+                    }}
+                  />
 
-                {/* Employee Markers */}
-                {employeesWithLocation.map((employee, index) => {
-                  const distance = calculateDistance(
-                    officeLocation.lat,
-                    officeLocation.lng,
-                    employee.location.latitude,
-                    employee.location.longitude
-                  );
-                  
-                  // Position relative to office (simplified visualization)
-                  const offsetX = (Math.random() - 0.5) * 200;
-                  const offsetY = (Math.random() - 0.5) * 200;
-                  
-                  return (
-                    <motion.div
-                      key={employee._id}
-                      initial={{ opacity: 0, scale: 0 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="absolute"
-                      style={{
-                        top: `calc(50% + ${offsetY}px)`,
-                        left: `calc(50% + ${offsetX}px)`,
-                        transform: 'translate(-50%, -50%)'
-                      }}
-                      onClick={() => setSelectedEmployee(employee)}
+                  {/* Office Radius Circle */}
+                  <Circle
+                    center={{ lat: officeLocation.lat, lng: officeLocation.lng }}
+                    radius={500}
+                    options={{
+                      fillColor: '#3b82f6',
+                      fillOpacity: 0.1,
+                      strokeColor: '#3b82f6',
+                      strokeOpacity: 0.4,
+                      strokeWeight: 2,
+                    }}
+                  />
+
+                  {/* Office Info Window */}
+                  {infoWindowOpen === 'office' && (
+                    <InfoWindow
+                      position={{ lat: officeLocation.lat, lng: officeLocation.lng }}
+                      onCloseClick={() => setInfoWindowOpen(null)}
                     >
-                      <div className="relative cursor-pointer">
-                        <div className={`w-6 h-6 ${getStatusColor(employee.status)} rounded-full flex items-center justify-center shadow-lg border-2 border-white`}>
-                          <div className="w-2 h-2 bg-white rounded-full" />
+                      <div className="p-2">
+                        <h3 className="font-bold text-lg flex items-center gap-2">
+                          <Building className="w-5 h-5 text-red-500" />
+                          Office Location
+                        </h3>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {officeLocation.address}
+                        </p>
+                        <div className="mt-2 text-xs text-gray-500">
+                          <p>Lat: {officeLocation.lat}</p>
+                          <p>Lng: {officeLocation.lng}</p>
                         </div>
-                        {distance <= 100 && (
-                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border border-white" />
-                        )}
                       </div>
-                    </motion.div>
-                  );
-                })}
+                    </InfoWindow>
+                  )}
 
-                {/* Legend */}
-                <div className="absolute bottom-4 left-4 bg-white p-3 rounded-lg shadow-lg">
-                  <h4 className="text-sm font-medium mb-2">Legend</h4>
-                  <div className="space-y-1 text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-red-500 rounded-full" />
-                      <span>Office Location</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-green-500 rounded-full" />
-                      <span>Present</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-yellow-500 rounded-full" />
-                      <span>Late</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-400 rounded-full" />
-                      <span>Within office radius</span>
-                    </div>
+                  {/* Employee Markers */}
+                  {employeesWithLocation.map((employee) => {
+                    const distance = calculateDistance(
+                      officeLocation.lat,
+                      officeLocation.lng,
+                      employee.location.latitude,
+                      employee.location.longitude
+                    );
+
+                    return (
+                      <React.Fragment key={employee._id}>
+                        <Marker
+                          position={{
+                            lat: employee.location.latitude,
+                            lng: employee.location.longitude
+                          }}
+                          icon={getMarkerIcon(employee.status, distance, employee.workLocationType)}
+                          title={employee.user?.name}
+                          onClick={() => {
+                            setSelectedEmployee(employee);
+                            setInfoWindowOpen(employee._id);
+                          }}
+                          animation={window.google.maps.Animation.DROP}
+                        />
+
+                        {/* Employee Info Window */}
+                        {infoWindowOpen === employee._id && (
+                          <InfoWindow
+                            position={{
+                              lat: employee.location.latitude,
+                              lng: employee.location.longitude
+                            }}
+                            onCloseClick={() => {
+                              setInfoWindowOpen(null);
+                              setSelectedEmployee(null);
+                            }}
+                          >
+                            <div className="p-3 min-w-[250px]">
+                              <div className="flex items-center gap-3 mb-3">
+                                <Avatar className="w-12 h-12">
+                                  <AvatarImage src={employee.user?.avatar} />
+                                  <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                                    {employee.user?.name?.split(' ').map(n => n[0]).join('')}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <h3 className="font-bold text-base">{employee.user?.name}</h3>
+                                  <p className="text-xs text-gray-600">{employee.user?.email}</p>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 text-sm">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-gray-600">Status:</span>
+                                  <Badge variant="outline" className={getStatusColor(employee.status)}>
+                                    {employee.status}
+                                  </Badge>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                  <span className="text-gray-600">Location:</span>
+                                  <span className="font-medium">
+                                    {employee.workLocationType || 'Office'}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                  <span className="text-gray-600">Distance:</span>
+                                  <span className={`font-medium ${distance <= 500 ? 'text-green-600' : 'text-orange-600'}`}>
+                                    {distance <= 500 ? (
+                                      <>
+                                        <CheckCircle className="w-3 h-3 inline mr-1" />
+                                        {distance.toFixed(0)}m (In office)
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Navigation2 className="w-3 h-3 inline mr-1" />
+                                        {(distance / 1000).toFixed(1)}km away
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                  <span className="text-gray-600">Check In:</span>
+                                  <span className="font-medium">
+                                    {formatTime(employee.startDayTime)}
+                                  </span>
+                                </div>
+
+                                {employee.location?.address && (
+                                  <div className="mt-2 pt-2 border-t">
+                                    <p className="text-xs text-gray-500 flex items-start gap-1">
+                                      <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                      <span>{employee.location.address}</span>
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </InfoWindow>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </GoogleMap>
+              </LoadScript>
+
+              {/* Map Legend */}
+              <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-lg border max-w-xs">
+                <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
+                  <MapPin className="w-4 h-4" />
+                  Map Legend
+                </h4>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-red-500 rounded-full" />
+                    <span>Office Location</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full" />
+                    <span>Employee (In Office Radius)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full" />
+                    <span>Employee (Remote)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-amber-500 rounded-full" />
+                    <span>Late Arrival</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full border-2 border-blue-500 bg-blue-100" />
+                    <span>500m Office Radius</span>
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t text-xs text-gray-600">
+                  <p className="flex items-center gap-1">
+                    <Users className="w-3 h-3" />
+                    {employeesWithLocation.length} employees tracked
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -249,7 +476,7 @@ const LiveAttendanceMap = ({ attendance }) => {
                             </p>
                             <Badge 
                               variant="outline" 
-                              className={`text-xs ${getStatusColor(employee.status).replace('bg-', 'text-').replace('-500', '-600')}`}
+                              className={`text-xs ${getStatusColor(employee.status)}`}
                             >
                               {getStatusIcon(employee.status)}
                               <span className="ml-1">{employee.status}</span>
@@ -259,12 +486,14 @@ const LiveAttendanceMap = ({ attendance }) => {
                           <div className="flex items-center gap-2 mt-1">
                             <Navigation className="w-3 h-3 text-gray-400" />
                             <span className="text-xs text-gray-600">
-                              {distance <= 100 ? (
-                                <span className="text-green-600 font-medium">
+                              {distance <= 500 ? (
+                                <span className="text-green-600 font-medium flex items-center gap-1">
+                                  <CheckCircle className="w-3 h-3" />
                                   In office ({distance.toFixed(0)}m)
                                 </span>
                               ) : (
-                                <span className="text-orange-600">
+                                <span className="text-orange-600 flex items-center gap-1">
+                                  <Navigation2 className="w-3 h-3" />
                                   {(distance / 1000).toFixed(1)}km away
                                 </span>
                               )}
@@ -272,7 +501,9 @@ const LiveAttendanceMap = ({ attendance }) => {
                           </div>
                           
                           <div className="flex items-center gap-2 mt-1">
-                            {employee.source === 'StartDay' ? (
+                            {employee.workLocationType === 'Home' ? (
+                              <Home className="w-3 h-3 text-purple-500" />
+                            ) : employee.source === 'StartDay' ? (
                               <Smartphone className="w-3 h-3 text-blue-500" />
                             ) : employee.source === 'Biometric' ? (
                               <Monitor className="w-3 h-3 text-green-500" />
@@ -282,6 +513,11 @@ const LiveAttendanceMap = ({ attendance }) => {
                             <span className="text-xs text-gray-500">
                               {formatTime(employee.startDayTime)}
                             </span>
+                            {employee.workLocationType === 'Home' && (
+                              <Badge variant="outline" className="text-xs text-purple-600">
+                                WFH
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -315,9 +551,20 @@ const LiveAttendanceMap = ({ attendance }) => {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span>Status:</span>
-                    <Badge className={getStatusColor(selectedEmployee.status).replace('bg-', 'text-').replace('-500', '-600')}>
+                    <Badge className={getStatusColor(selectedEmployee.status)}>
                       {selectedEmployee.status}
                     </Badge>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <span>Location Type:</span>
+                    <span className="font-medium flex items-center gap-1">
+                      {selectedEmployee.workLocationType === 'Home' ? (
+                        <><Home className="w-3 h-3" /> Work From Home</>
+                      ) : (
+                        <><Building className="w-3 h-3" /> Office</>
+                      )}
+                    </span>
                   </div>
                   
                   <div className="flex justify-between">
@@ -326,27 +573,71 @@ const LiveAttendanceMap = ({ attendance }) => {
                   </div>
                   
                   <div className="flex justify-between">
-                    <span>Location:</span>
-                    <span className="text-right">
+                    <span>Address:</span>
+                    <span className="text-right text-xs">
                       {selectedEmployee.location?.address || 'Unknown'}
                     </span>
                   </div>
                   
                   <div className="flex justify-between">
-                    <span>Distance:</span>
-                    <span>
+                    <span>Distance from Office:</span>
+                    <span className={calculateDistance(
+                      officeLocation.lat,
+                      officeLocation.lng,
+                      selectedEmployee.location.latitude,
+                      selectedEmployee.location.longitude
+                    ) <= 500 ? 'text-green-600 font-medium' : 'text-orange-600'}>
                       {calculateDistance(
                         officeLocation.lat,
                         officeLocation.lng,
                         selectedEmployee.location.latitude,
                         selectedEmployee.location.longitude
-                      ).toFixed(0)}m from office
+                      ) <= 500 
+                        ? `${calculateDistance(
+                            officeLocation.lat,
+                            officeLocation.lng,
+                            selectedEmployee.location.latitude,
+                            selectedEmployee.location.longitude
+                          ).toFixed(0)}m (In office)`
+                        : `${(calculateDistance(
+                            officeLocation.lat,
+                            officeLocation.lng,
+                            selectedEmployee.location.latitude,
+                            selectedEmployee.location.longitude
+                          ) / 1000).toFixed(1)}km`
+                      }
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Coordinates:</span>
+                    <span className="text-xs text-gray-500">
+                      {selectedEmployee.location.latitude.toFixed(4)}, {selectedEmployee.location.longitude.toFixed(4)}
                     </span>
                   </div>
                 </div>
 
                 <Button 
                   variant="outline" 
+                  size="sm" 
+                  className="w-full mt-3"
+                  onClick={() => {
+                    if (map && selectedEmployee.location) {
+                      map.panTo({
+                        lat: selectedEmployee.location.latitude,
+                        lng: selectedEmployee.location.longitude
+                      });
+                      map.setZoom(16);
+                      setInfoWindowOpen(selectedEmployee._id);
+                    }
+                  }}
+                >
+                  <Navigation className="w-3 h-3 mr-2" />
+                  View on Map
+                </Button>
+
+                <Button 
+                  variant="ghost" 
                   size="sm" 
                   className="w-full"
                   onClick={() => setSelectedEmployee(null)}
